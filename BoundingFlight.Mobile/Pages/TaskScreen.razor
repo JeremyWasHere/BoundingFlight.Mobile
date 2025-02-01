@@ -1,5 +1,206 @@
-﻿<h3>TaskScreen</h3>
+﻿@page "/tasks/{SetHashCode:int}"
+@layout Layouts.TaskLayout
+
+@using PlanetMinute.Mobile.Models.Tasks
+@using PlanetMinute.Mobile.Services
+
+@inject AppStateService AppStateService
+@inject NavigationManager NavigationManager
+@inject UserService UserService
+@inject IJSRuntime JSRuntime
+@implements IDisposable
+
+@if (ShowLoadActivity)
+{
+    <PageLoadIndicator />
+}
+else
+{
+    <div id="background" style="--background-color: @SelectedTask.BackgroundColor"></div>
+    <div id="canvas"></div>
+    <div id="screen">
+        <h2>@SelectedTask.BigIntention</h2>
+
+        <div class="time-elapsed">@TimeElapsed</div>
+
+        <div @onclick="() => PlayPauseTaskAsync()">
+            <div class="donut-progress css">
+                <div class="play-pause">
+                    <span class="material-icons">
+                        @PlayPauseIcon
+                    </span>
+                </div>
+                <svg width="252" height="252" xmlns="http://www.w3.org/2000/svg">
+                    <g>
+                        <title>Layer 1</title>
+                        <circle style="opacity: 0.5" r="120" cy="126" cx="126" stroke-width="12" stroke="#FFF" fill="none" />
+                    </g>
+                    <g>
+                        <title>Layer 2</title>
+                        <circle class="circle_animation" style="stroke-dasharray: @ProgressCompleted @(TotalUnitsOfProgress - ProgressCompleted)" r="120" cy="126" cx="126" stroke-width="12" stroke="#FFF" stroke-linecap="round" fill="none" />
+                    </g>
+                </svg>
+            </div>
+        </div>
+
+        @if (SelectedTask.Minutes != "00")
+        {
+            <div class="time-goal mb-3">Goal<br />@SelectedTask.Minutes minutes @SelectedTask.Seconds seconds</div>
+        }
+        else
+        {
+            <div class="time-goal mb-3">Goal<br />@SelectedTask.Seconds seconds</div>
+        }
+
+        <div class="task-tools">
+            @if (IsGoalCompleted)
+            {
+                <div class="goal-reached mb-3">Goal Reached</div>
+            }
+            @if (!IsPlaying)
+            {
+                <div class="d-grid wide-button gap-3">
+                    <button class="btn btn-transparent" type="button" @onclick="() => CompleteTaskAsync()">Finish Session</button>
+                </div>               
+            }
+        </div>
+
+        <audio id="audio" src="@SelectedTask.AudioUrl" controls loop />
+        <audio id="chime" src="/media/chime.mp3" />
+
+        <input id="foreground-color" type="hidden" value="@SelectedTask.ForegroundColor">
+
+    </div>
+
+}
+
+<Scripts src="/scripts/visualizer.js"></Scripts>
 
 @code {
+    [Parameter]
+    public int SetHashCode { get; set; }
 
+    private SelectedTaskDTO SelectedTask;
+
+    private bool ShowLoadActivity;
+
+    private string PlayPauseIcon = "pause_circle";
+
+    private bool IsPlaying;
+    private bool IsGoalCompleted;
+
+    private DateTime CurrentTimeSpanStart { get; set; } = DateTime.Now;
+    private List<TimeSpan> TotalTimeSpent { get; set; } = new List<TimeSpan>();
+
+    private string TimeElapsed;
+    private long GoalInSeconds;
+    private double ProgressCompleted;
+    private double TotalUnitsOfProgress;
+
+    Timer Timer;
+
+    private Modal CompletedModal;
+
+    protected override async Task OnInitializedAsync()
+    {
+        ShowLoadActivity = true;
+
+        if (!await UserService.CheckIsLoggedInAsync())
+            NavigationManager.NavigateTo("/log-in");
+
+        SelectedTask = (SelectedTaskDTO)AppStateService.ObjectTunnel[SetHashCode];
+
+        Timer = new Timer(Tick, null, 0, 34);
+
+        GoalInSeconds = (int.Parse(SelectedTask.Minutes) * 60) + int.Parse(SelectedTask.Seconds);
+
+        TotalUnitsOfProgress = 755; // 755 is the full circumference of a circle this size.
+        ProgressCompleted = 0;
+
+        IsPlaying = true;
+
+        await JSRuntime.InvokeVoidAsync("eval", @"setTimeout(function () { visualizerInit();audio.play(); }, 500);");
+
+        ShowLoadActivity = false;
+    }
+
+    private async Task PlayPauseTaskAsync()
+    {
+        if (IsPlaying)
+        {
+            TotalTimeSpent.Add(
+                DateTime.Now - CurrentTimeSpanStart
+            );
+
+            IsPlaying = false;
+            PlayPauseIcon = "play_circle";
+
+            await JSRuntime.InvokeVoidAsync("eval", @"audio.pause();");
+        }
+        else
+        {
+            CurrentTimeSpanStart = DateTime.Now;
+
+            IsPlaying = true;
+            PlayPauseIcon = "pause_circle";
+
+            await JSRuntime.InvokeVoidAsync("eval", @"audio.play();");
+        }
+    }
+
+    private async Task CompleteTaskAsync()
+    {
+        var session = new SessionDTO
+        {
+            TaskId = SelectedTask.TaskId,
+            Intention = SelectedTask.BigIntention,
+            GoalInSeconds = GoalInSeconds,
+            DurationInSeconds = (long)Math.Floor(TotalTimeSpent.Sum(ts => ts.TotalSeconds))
+        };
+
+        AppStateService.ObjectTunnel.Add(session.GetHashCode(), session);
+
+        NavigationManager.NavigateTo($"/tasks/debrief/{session.GetHashCode()}");
+    }
+
+    private void Tick(object _)
+    {
+        InvokeAsync(UpdateScreenAsync);
+    }
+
+    private async Task UpdateScreenAsync()
+    {
+        if (IsPlaying)
+        {
+            var totalSeconds = TotalTimeSpent.Sum(ts => ts.TotalSeconds);
+
+            var currentTimeSpan = DateTime.Now - CurrentTimeSpanStart;
+
+            totalSeconds += currentTimeSpan.TotalSeconds;
+
+            var minutes = (long)Math.Floor(totalSeconds) / 60;
+            var seconds = (long)Math.Floor(totalSeconds) % 60;
+
+            TimeElapsed = $"{minutes:D2}:{seconds:D2}";
+
+            if (!IsGoalCompleted)
+            {
+                ProgressCompleted = totalSeconds * (TotalUnitsOfProgress / GoalInSeconds);
+
+                if (ProgressCompleted >= TotalUnitsOfProgress)
+                {
+                    IsGoalCompleted = true;
+
+                    await JSRuntime.InvokeVoidAsync("eval", @"chime.play();");
+                }
+            }
+
+            StateHasChanged();
+        }
+    }
+
+    public void Dispose()
+    {
+        Timer?.Dispose();
+    }
 }
