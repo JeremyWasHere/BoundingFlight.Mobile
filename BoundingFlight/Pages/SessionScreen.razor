@@ -1,0 +1,192 @@
+﻿@page "/sessions/{SetHashCode:int}"
+@using BoundingFlight.Models
+@using BoundingFlight.Services
+@layout Layouts.SessionLayout
+
+@inject AppStateService AppStateService
+@inject NavigationManager NavigationManager
+@implements IDisposable
+
+@if (ShowLoadActivity)
+{
+    <PageLoadIndicator />
+}
+else
+{
+    <div id="background" style="--background-color: @BackgroundColor"></div>
+    <div id="canvas"></div>
+    <div id="screen" style="--foreground-color: @ForegroundColor">
+        <h2>@Phase</h2>
+
+        <div class="time-elapsed">@TimeElapsed</div>
+
+        <div @onclick="() => PlayPauseTaskAsync()">
+            <div class="donut-progress css">
+                <div class="play-pause">
+                    <span class="material-icons">
+                        @PlayPauseIcon
+                    </span>
+                </div>
+                <svg width="252" height="252" xmlns="http://www.w3.org/2000/svg">
+                    <g>
+                        <title>Layer 1</title>
+                        <circle style="opacity: 0.5" r="120" cy="126" cx="126" stroke-width="12" stroke="@ForegroundColor" fill="none" />
+                    </g>
+                    <g>
+                        <title>Layer 2</title>
+                        <circle class="circle_animation" style="stroke-dasharray: @ProgressCompleted @(TotalUnitsOfProgress - ProgressCompleted)" r="120" cy="126" cx="126" stroke-width="12" stroke="@ForegroundColor" stroke-linecap="round" fill="none" />
+                    </g>
+                </svg>
+            </div>
+        </div>
+
+        @if (Session.Minutes != "00")
+        {
+            <div class="time-goal mb-3">Session<br />@Session.Minutes minutes @Session.Seconds seconds</div>
+        }
+        else
+        {
+            <div class="time-goal mb-3">Session<br />@Session.Seconds seconds</div>
+        }
+
+    </div>
+}
+
+@code {
+    [Parameter]
+    public int SetHashCode { get; set; }
+
+    private bool ShowLoadActivity;
+
+    private string PlayPauseIcon = "pause_circle";
+
+    private bool IsPlaying;
+
+    private DateTime CurrentTimeSpanStart { get; set; } = DateTime.Now;
+    private List<TimeSpan> TotalTimeSpent { get; set; } = new List<TimeSpan>();
+
+    private string TimeElapsed;
+    private long GoalInSeconds;
+    private double ProgressCompleted;
+    private double TotalUnitsOfProgress;
+
+    private SessionDTO Session;
+
+    private string BackgroundColor;
+    private string ForegroundColor;
+    private string Phase;
+
+    Timer Timer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        ShowLoadActivity = true;
+
+        Session = (SessionDTO)AppStateService.ObjectTunnel[SetHashCode];
+
+        Phase = "Productivity";
+        BackgroundColor = "#48BF91";
+        ForegroundColor = "#FFFFFF";
+
+        Timer = new Timer(Tick, null, 0, 34);
+
+        GoalInSeconds = (int.Parse(Session.Minutes) * 60) + int.Parse(Session.Seconds);
+
+        TotalUnitsOfProgress = 755; // 755 is the full circumference of a circle this size.
+        ProgressCompleted = 0;
+
+        IsPlaying = true;
+
+        ShowLoadActivity = false;
+
+        DeviceDisplay.Current.KeepScreenOn = true;
+    }
+
+    private async Task PlayPauseTaskAsync()
+    {
+        if (IsPlaying)
+        {
+            TotalTimeSpent.Add(
+                DateTime.Now - CurrentTimeSpanStart
+            );
+
+            IsPlaying = false;
+            PlayPauseIcon = "play_circle";
+        }
+        else
+        {
+            CurrentTimeSpanStart = DateTime.Now;
+
+            IsPlaying = true;
+            PlayPauseIcon = "pause_circle";
+        }
+    }
+
+    private void Tick(object _)
+    {
+        InvokeAsync(UpdateScreenAsync);
+    }
+
+    private async Task UpdateScreenAsync()
+    {
+        if (IsPlaying)
+        {
+            var totalSeconds = TotalTimeSpent.Sum(ts => ts.TotalSeconds);
+
+            var currentTimeSpan = DateTime.Now - CurrentTimeSpanStart;
+
+            totalSeconds += currentTimeSpan.TotalSeconds;
+
+            var minutes = (long)Math.Floor(totalSeconds) / 60;
+            var seconds = (long)Math.Floor(totalSeconds) % 60;
+
+            TimeElapsed = $"{minutes:D2}:{seconds:D2}";
+
+            ProgressCompleted = totalSeconds * (TotalUnitsOfProgress / GoalInSeconds);
+
+            var percentCompleted = (ProgressCompleted / TotalUnitsOfProgress) * 100;
+
+            if (percentCompleted >= 66.7 && percentCompleted < 75)
+            {
+                Phase = "Reflection";
+                BackgroundColor = "#E8E5E4";
+                ForegroundColor = "#666666";
+            }
+
+            if (percentCompleted >= 75 && percentCompleted < 100)
+            {
+                Phase = "Leisure";
+                BackgroundColor = "#4DB4D7";
+                ForegroundColor = "#FFFFFF";
+            }
+
+            if (ProgressCompleted >= TotalUnitsOfProgress)
+            {
+                // Completed.
+
+                TotalTimeSpent.Add(
+                    DateTime.Now - CurrentTimeSpanStart
+                );
+
+                IsPlaying = false;
+                PlayPauseIcon = "play_circle";
+
+                ProgressCompleted = 0;
+                TotalTimeSpent.Clear();
+
+                TimeElapsed = "00:00";
+
+                Phase = "Productivity";
+                BackgroundColor = "#48BF91";
+                ForegroundColor = "#FFFFFF";
+            }
+
+            StateHasChanged();
+        }
+    }
+
+    public void Dispose()
+    {
+        Timer?.Dispose();
+    }
+}

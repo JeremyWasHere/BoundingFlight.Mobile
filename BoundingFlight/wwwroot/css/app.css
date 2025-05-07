@@ -1,4 +1,11 @@
-﻿/*#if (SampleContent)*/
+﻿@font-face {
+    font-family: 'ff_avance';
+    src: url('../fonts/8139c757c74417d0aaf68d6d3403f365.woff2') format('woff2'), url('../fonts/8139c757c74417d0aaf68d6d3403f365.woff') format('woff');
+    font-weight: normal;
+    font-style: normal;
+}
+
+/*#if (SampleContent)*/
 html, body {
     font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
 }

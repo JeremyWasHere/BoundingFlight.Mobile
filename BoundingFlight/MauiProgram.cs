@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.Logging;
+﻿using BoundingFlight.Services;
+using Microsoft.Extensions.Logging;
 
 namespace BoundingFlight;
 
@@ -14,7 +15,9 @@ public static class MauiProgram
 				fonts.AddFont("OpenSans-Regular.ttf", "OpenSansRegular");
 			});
 
-		builder.Services.AddMauiBlazorWebView();
+        builder.Services.AddSingleton<AppStateService>();
+
+        builder.Services.AddMauiBlazorWebView();
 
 #if DEBUG
 		builder.Services.AddBlazorWebViewDeveloperTools();

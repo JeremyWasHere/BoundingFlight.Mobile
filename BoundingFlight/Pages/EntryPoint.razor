@@ -1,0 +1,35 @@
+﻿@page "/"
+@using BoundingFlight.Models
+@using BoundingFlight.Services
+
+@inject AppStateService AppStateService
+@inject NavigationManager NavigationManager
+
+@code {
+
+    protected override async Task OnInitializedAsync()
+    {
+        // await UserService.CheckCreateUserAsync();
+
+        // if (await UserService.CheckOnboardedAsync())
+        // {
+        //     NavigationManager.NavigateTo("/dashboard");
+        // }
+        // else
+        // {
+        //     NavigationManager.NavigateTo("/onboarding");
+        // }
+
+
+        var session = new SessionDTO
+        {
+            Minutes = "10",
+            Seconds = "0"
+        };
+
+        AppStateService.ObjectTunnel.Clear();
+        AppStateService.ObjectTunnel.Add(session.GetHashCode(), session);
+
+        NavigationManager.NavigateTo($"/sessions/{session.GetHashCode()}");
+    }
+}
